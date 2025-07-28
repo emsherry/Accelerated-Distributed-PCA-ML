@@ -71,3 +71,4 @@ Despite the higher dimensional complexity of image data, Accelerated DSA demonst
 git clone https://github.com/emsherry/Accelerated-Distributed-PCA-ML.git
 cd Accelerated-Distributed-PCA-ML
 pip install -r requirements.txt
+python run.py
