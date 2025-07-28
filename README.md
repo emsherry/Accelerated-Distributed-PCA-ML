@@ -46,7 +46,22 @@ This repo focuses on **making PCA scalable and distributed** for massive ML pipe
 - Accelerated DSA achieves ~10x lower final projection error
 - Robust to high-dimensional vision data
 
-> 📊 See `/results/*.png` for full plots
+## 🔍 Result Comparison
+
+### 📊 MNIST Dataset
+
+Accelerated DSA achieves convergence within 1000 iterations, outperforming standard DSA and matching centralized methods like FAST-PCA.
+
+![MNIST Result](assets/mnist_core_algorithms_comparison.png)
+
+---
+
+### 📊 CIFAR-10 Dataset
+
+Despite the higher dimensional complexity of image data, Accelerated DSA demonstrates significantly improved convergence over standard DSA.
+
+![CIFAR-10 Result](assets/cifar10_core_algorithms_comparison.png)
+
 
 ---
 
