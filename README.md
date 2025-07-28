@@ -32,7 +32,7 @@ This repo focuses on **making PCA scalable and distributed** for massive ML pipe
 |---------------------------|------------------------------------------------|
 | Centralized Sanger (FAST-PCA) | Uses global data for full PCA              |
 | Standard DSA              | Distributed updates across nodes              |
-| 🚀 Accelerated DSA (Ours) | Adds momentum to DSA updates for faster convergence |
+| 🚀 Accelerated DSA       | Adds momentum to DSA updates for faster convergence |
 
 ---
 
