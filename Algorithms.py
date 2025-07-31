@@ -328,11 +328,16 @@ class Algorithms:
             S_prev = S
             S = S1
         return S
+    
+    def safe_normalize(self, M):
+        norms = np.linalg.norm(M, axis=0)
+        norms[norms < 1e-8] = 1e-8  # Avoid divide-by-zero and small values
+        return M / norms
 
 
     def dist_subspace(self, X, Y):
-        X = X/np.linalg.norm(X, axis=0)
-        Y = Y/np.linalg.norm(Y, axis=0)
+        X = self.safe_normalize(X)
+        Y = self.safe_normalize(Y)
         M = np.matmul(X.transpose(), Y)
         sine_angle = 1 - np.diag(M)**2
         dist = np.sum(sine_angle)/X.shape[1]

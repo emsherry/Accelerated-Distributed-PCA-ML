@@ -9,7 +9,13 @@ class AcceleratedAlgorithms:
         self.n = num_nodes
         self.X_init = initial_est
         self.X_gt = ground_truth
+        
+    def safe_normalize(self, M):
+        norms = np.linalg.norm(M, axis=0)
+        norms[norms < 1e-8] = 1e-8  # Avoid divide-by-zero and small values
+        return M / norms
 
+    
     def accelerated_DSA(self, WW, alpha=0.002, beta=0.9, step_flag=0):
         """
         Momentum-based Accelerated Distributed Sanger's Algorithm (DSA)
@@ -19,16 +25,13 @@ class AcceleratedAlgorithms:
         N = self.data.shape[1]
         Cy_cell = np.zeros((self.n,), dtype=object)
         s = math.floor(N / self.n)
-        
         # Precompute covariance matrices for each node
         for i in range(self.n):
             Yi = self.data[:, i * s:(i + 1) * s]
             Cy_cell[i] = (1 / s) * np.dot(Yi, Yi.transpose())
-
         # Initialize weights and momentum terms
         X_dsa = np.tile(self.X_init.T, (self.n, 1))
         V = np.zeros_like(X_dsa)
-
         for itr in range(self.num_itr):
             if step_flag == 0:
                 alpha0 = alpha
@@ -36,19 +39,15 @@ class AcceleratedAlgorithms:
                 alpha0 = alpha / (itr + 1) ** 0.2
             elif step_flag == 2:
                 alpha0 = alpha / math.sqrt(itr + 1)
-
             grad = self.sanger_dist_update(Cy_cell, X_dsa)
-
             # Apply momentum update
             V = beta * V + grad
             X_dsa = np.dot(WW, X_dsa) - alpha0 * V
-
             err = 0
             for i in range(self.n):
                 X1 = X_dsa[i * self.K:(i + 1) * self.K, :]
                 err += self.dist_subspace(self.X_gt, X1.T)
             angle_accel_dsa = np.append(angle_accel_dsa, err / self.n)
-
             if itr % 1000 == 0:
                 print(f"Iteration {itr}: avg error = {angle_accel_dsa[-1]:.4f}")
 
@@ -64,10 +63,11 @@ class AcceleratedAlgorithms:
             g = -np.dot(Cell[i], X2) + np.dot(X2, T)
             grad[i * self.K:(i + 1) * self.K, :] = g.T
         return grad
-
+    
+    
     def dist_subspace(self, X, Y):
-        X = X / np.linalg.norm(X, axis=0)
-        Y = Y / np.linalg.norm(Y, axis=0)
+        X = self.safe_normalize(X)
+        Y = self.safe_normalize(Y)
         M = np.matmul(X.T, Y)
         sine_angle = 1 - np.diag(M) ** 2
         dist = np.sum(sine_angle) / X.shape[1]

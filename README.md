@@ -1,73 +1,80 @@
-# 🧠 Accelerated Distributed PCA for Scalable Machine Learning
+# 📊 Distributed PCA with Tensor Decomposition and Accelerated Learning
 
-This repository presents a research-backed, production-level implementation of **Distributed PCA** algorithms tailored for **Machine Learning** workflows — with our **novel contribution**: Momentum-based **Accelerated Distributed Sanger’s Algorithm (DSA)**.
+This project implements and compares several PCA algorithms for distributed machine learning, including:
+- Centralized Sanger (FAST-PCA)
+- Standard Distributed Subspace Approximation (DSA)
+- Accelerated DSA (with momentum)
+- Tensor-based PCA using Tucker Decomposition
 
----
-
-## 🧬 Project Summary
-
-📌 PCA (Principal Component Analysis) is a foundational tool in ML for:
-- Dimensionality reduction
-- Noise filtering
-- Faster model training
-- Visualization & compression
-
-This repo focuses on **making PCA scalable and distributed** for massive ML pipelines and federated environments.
+> ✅ Designed for AI/ML research on dimensionality reduction, communication-efficient learning, and subspace optimization in distributed environments.
 
 ---
 
-## 🚀 Key Features
+## 🚀 Key ML Contributions
 
-- ✅ Reproduces algorithms from 3 top research papers
-- ✅ Implements our own **Accelerated DSA**
-- ✅ Tested on **MNIST** and **CIFAR-10**
-- ✅ Plots, metrics, and comparisons included
-- ✅ Suitable for deployment in federated/edge setups
-
----
-
-## 📊 Algorithms Included
-
-| Algorithm                  | Description                                    |
-|---------------------------|------------------------------------------------|
-| Centralized Sanger (FAST-PCA) | Uses global data for full PCA              |
-| Standard DSA              | Distributed updates across nodes              |
-| 🚀 Accelerated DSA       | Adds momentum to DSA updates for faster convergence |
+- **Distributed PCA**: Enables scalable, decentralized subspace learning across nodes.
+- **Accelerated DSA**: Momentum-based optimization significantly speeds up convergence.
+- **Tensor PCA (Tucker)**: Applies decomposition on multi-dimensional data to reduce memory usage and improve convergence on real-world image datasets.
+- **Cosine Angle Distance**: Used as the evaluation metric to measure distance from ground truth eigenspace.
 
 ---
 
-## 📈 Results at a Glance
+## 📂 Datasets Used
 
-### MNIST
-- Accelerated DSA converges in ~1000 iterations
-- Outperforms Standard DSA in error and stability
+- 🖼️ [MNIST](http://yann.lecun.com/exdb/mnist/) (handwritten digits)
+- 🌈 [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) (natural RGB images)
 
-### CIFAR-10
-- Accelerated DSA achieves ~10x lower final projection error
-- Robust to high-dimensional vision data
-
-## 🔍 Result Comparison
-
-### 📊 MNIST Dataset
-
-Accelerated DSA achieves convergence within 1000 iterations, outperforming standard DSA and matching centralized methods like FAST-PCA.
-
-![MNIST Result](assets/mnist_core_algorithms_comparison.png)
+You can use the `--limit` flag for memory-constrained experiments.
 
 ---
 
-### 📊 CIFAR-10 Dataset
+## 📊 Experimental Results
 
-Despite the higher dimensional complexity of image data, Accelerated DSA demonstrates significantly improved convergence over standard DSA.
+### 🧪 Raw Dataset Experiments (MNIST & CIFAR-10)
 
-![CIFAR-10 Result](assets/cifar10_core_algorithms_comparison.png)
+![MNIST Raw](results/mnist_core_algorithms_comparison.png)
+![CIFAR10 Raw](results/cifar10_core_algorithms_comparison.png)
 
+✅ **Findings:**
+- Centralized Sanger (FAST-PCA) is fast but not scalable across nodes.
+- Standard DSA suffers from slow convergence due to full-dimensional communication.
+- Accelerated DSA shows better convergence with a notable accuracy boost, especially on MNIST.
+- However, raw datasets still incur **high memory costs**, making them suboptimal for large-scale distributed learning.
 
 ---
 
-## 🛠️ Run It Yourself
+### 🔺 Tensor-Based Experiments (Tucker MNIST & CIFAR-10)
+
+![Tensor MNIST](results/tensor_mnist_core_algorithms_comparison.png)
+![Tensor CIFAR10](results/tensor_cifar10_core_algorithms_comparison.png)
+
+✅ **Findings:**
+- Applying Tucker decomposition **drastically reduces dimensionality**, compressing input data before running PCA.
+- This leads to **faster convergence and lower error** for both Standard and Accelerated DSA.
+- Accelerated DSA benefits most, consistently reaching high accuracy early.
+- Especially on CIFAR-10, the tensor-based approach **outperforms raw input** across all models.
+
+---
+
+## 🧠 Why It Matters for ML
+
+- **Efficient Subspace Learning**: Useful for training models on high-dimensional sensor/image data in federated or IoT systems.
+- **Reduced Memory & Communication**: Tucker decomposition removes redundancy before training, reducing GPU/CPU load.
+- **ML Scalability**: Demonstrates how modern PCA variants can operate efficiently across edge and distributed systems.
+
+---
+
+## 🧪 How to Run
 
 ```bash
-git clone https://github.com/emsherry/Accelerated-Distributed-PCA-ML.git
-cd Accelerated-Distributed-PCA-ML
-pip install -r requirements.txt
+# Raw MNIST
+python comparison_run.py -ds mnist -i 2000 --limit 3000
+
+# Raw CIFAR-10
+python comparison_run.py -ds cifar10 -i 2000 --limit 3000
+
+# Tensor MNIST
+python comparison_run.py -ds tensor_mnist -i 2000 -r 10 --limit 3000
+
+# Tensor CIFAR-10
+python comparison_run.py -ds tensor_cifar10 -i 2000 -r 10 --limit 3000
