@@ -1,37 +1,60 @@
-# Ignore system files
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Results and outputs
+results/
+*.png
+*.pdf
+*.npz
+*.pickle
+*.pkl
+
+# OS
 .DS_Store
 Thumbs.db
 
-# Ignore Python cache
-__pycache__/
-*.py[cod]
-*.so
-*.log
+# Package managers
+uv.lock
+poetry.lock
+Pipfile.lock
 
-# Ignore dataset files
-Datasets/
-!Datasets/README.md  # allow an empty placeholder if you want
-
-# Ignore experiment results except plots
-results/*.pickle
-results/*.pkl
-results/*.npy
-results/*.npz
-!results/*.png  # keep PNG plots only
-
-# Ignore environment or virtualenv folders
-env/
-venv/
-dsa-env/
-*.egg-info/
-
-# Ignore notebook checkpoints (if any)
-.ipynb_checkpoints/
-
-# VSCode settings (optional)
-.vscode/
-
-# Ignore temporary files
-*.bak
+# Temporary files
 *.tmp
-*.swp
+*.temp

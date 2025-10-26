@@ -20,7 +20,7 @@ class AcceleratedAlgorithms:
         """
         Momentum-based Accelerated Distributed Sanger's Algorithm (DSA)
         """
-        print("🚀 Running Accelerated DSA...")
+        print("Running Accelerated DSA...")
         angle_accel_dsa = self.dist_subspace(self.X_gt, self.X_init)
         N = self.data.shape[1]
         Cy_cell = np.zeros((self.n,), dtype=object)
@@ -42,7 +42,15 @@ class AcceleratedAlgorithms:
             grad = self.sanger_dist_update(Cy_cell, X_dsa)
             # Apply momentum update
             V = beta * V + grad
-            X_dsa = np.dot(WW, X_dsa) - alpha0 * V
+            X_dsa = np.dot(WW, X_dsa) + alpha0 * V
+            
+            # Apply orthonormalization to each node's estimate
+            for i in range(self.n):
+                X1 = X_dsa[i * self.K:(i + 1) * self.K, :]
+                X2 = X1.T  # (d x K)
+                X2, _ = np.linalg.qr(X2)  # Orthonormalize
+                X_dsa[i * self.K:(i + 1) * self.K, :] = X2.T  # (K x d)
+            
             err = 0
             for i in range(self.n):
                 X1 = X_dsa[i * self.K:(i + 1) * self.K, :]
@@ -54,14 +62,22 @@ class AcceleratedAlgorithms:
         return angle_accel_dsa
 
     def sanger_dist_update(self, Cell, X):
+        """
+        Distributed Sanger update with exact equations.
+        X: stacked estimates from all nodes (n*K x d)
+        Cell: local covariance matrices for each node
+        """
         grad = np.zeros(X.shape)
         for i in range(Cell.shape[0]):
-            X1 = X[i * self.K:(i + 1) * self.K, :]
-            X2 = X1.T
-            T = np.dot(np.dot(X1, Cell[i]), X2)
+            # Extract node i's estimate (consensus result)
+            X1 = X[i * self.K:(i + 1) * self.K, :]  # (K x d)
+            X2 = X1.T  # (d x K)
+            
+            # Exact Sanger equation: grad = C @ X - X @ triu(X.T @ C @ X)
+            T = np.dot(np.dot(X1, Cell[i]), X2)  # (K x K)
             T = np.triu(T)
-            g = -np.dot(Cell[i], X2) + np.dot(X2, T)
-            grad[i * self.K:(i + 1) * self.K, :] = g.T
+            g = np.dot(Cell[i], X2) - np.dot(X2, T)  # (d x K)
+            grad[i * self.K:(i + 1) * self.K, :] = g.T  # (K x d)
         return grad
     
     

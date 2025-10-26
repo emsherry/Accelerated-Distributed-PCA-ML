@@ -53,14 +53,17 @@ class Algorithms:
                 alpha0 = alpha / (itr + 1)**0.2  # decreasing step-size
             elif step_flag == 2:
                 alpha0 = alpha/math.sqrt(itr + 1)
-            X_sanger = X_sanger - alpha0 * self.sanger_centralized_update(Cy, X_sanger)
+            X_sanger = X_sanger + alpha0 * self.sanger_centralized_update(Cy, X_sanger)
+            # Orthonormalization after update step
+            X_sanger, _ = np.linalg.qr(X_sanger)
             angle_sanger = np.append(angle_sanger, self.dist_subspace(self.X_gt, X_sanger))
         return angle_sanger
 
     def sanger_centralized_update(self, C, X):
+        # Exact Sanger equation: grad = C @ X - X @ triu(X.T @ C @ X)
         T = np.dot(np.dot(X.transpose(), C), X)
         T = np.triu(T)
-        g = -np.dot(C, X) + np.dot(X, T)
+        g = np.dot(C, X) - np.dot(X, T)
         return g
 
     def DSA(self, WW, alpha, step_flag):
@@ -80,7 +83,15 @@ class Algorithms:
                 alpha0 = alpha / (itr + 1)**0.2
             elif step_flag == 2:
                 alpha0 = alpha / math.sqrt(itr + 1)
-            X_dsa = np.dot(WW, X_dsa) - alpha0 * self.sanger_dist_update(Cy_cell, X_dsa)
+            X_dsa = np.dot(WW, X_dsa) + alpha0 * self.sanger_dist_update(Cy_cell, X_dsa)
+            
+            # Apply orthonormalization to each node's estimate
+            for i in range(self.n):
+                X1 = X_dsa[i * self.K:(i + 1) * self.K, :]
+                X2 = X1.transpose()  # (d x K)
+                X2, _ = np.linalg.qr(X2)  # Orthonormalize
+                X_dsa[i * self.K:(i + 1) * self.K, :] = X2.transpose()  # (K x d)
+            
             err = 0
             for i in range(self.n):
                 X1 = X_dsa[i * self.K:(i + 1) * self.K, :]
@@ -91,14 +102,22 @@ class Algorithms:
 
 
     def sanger_dist_update(self, Cell, X):
+        """
+        Distributed Sanger update with exact equations.
+        X: stacked estimates from all nodes (n*K x d)
+        Cell: local covariance matrices for each node
+        """
         grad = np.zeros(X.shape)
         for i in range(Cell.shape[0]):
-            X1 = X[i * self.K:(i + 1) * self.K, :]
-            X2 = X1.transpose()
-            T = np.dot(np.dot(X1, Cell[i]), X2)
+            # Extract node i's estimate (consensus result)
+            X1 = X[i * self.K:(i + 1) * self.K, :]  # (K x d)
+            X2 = X1.transpose()  # (d x K)
+            
+            # Exact Sanger equation: grad = C @ X - X @ triu(X.T @ C @ X)
+            T = np.dot(np.dot(X1, Cell[i]), X2)  # (K x K)
             T = np.triu(T)
-            g = -np.dot(Cell[i], X2) + np.dot(X2, T)
-            grad[i * self.K:(i + 1) * self.K, :] = g.transpose()
+            g = np.dot(Cell[i], X2) - np.dot(X2, T)  # (d x K)
+            grad[i * self.K:(i + 1) * self.K, :] = g.transpose()  # (K x d)
         return grad
 
     def seqdistPM(self, W, Tc):
@@ -142,14 +161,14 @@ class Algorithms:
         N = self.data.shape[1]
         s = math.floor(N / self.n)
         # print('number of samples on one sites:',s)
-        covariance_matrix = np.zeros((self.n,), dtype=np.object)
+        covariance_matrix = np.zeros((self.n,), dtype=object)
         for i in range(self.n):  # loop for nodes
             Yi = self.data[:, i * s:(i + 1) * s]
             covariance_matrix[i] = (1 / s) * np.dot(Yi, Yi.transpose())
 
-        error = np.zeros((self.n,), dtype=np.object)
+        error = np.zeros((self.n,), dtype=object)
         error_index = [0]
-        Q = np.zeros((self.n,), dtype=np.object)
+        Q = np.zeros((self.n,), dtype=object)
 
         err_curr = np.zeros((self.n, 1))
 
@@ -187,16 +206,16 @@ class Algorithms:
     def distributed_OI_INC(self, W, T_consensus_max, T_consensus_init=1, Tc_inc=1):
         N = self.data.shape[1]
         s = math.floor(N / self.n)
-        covariance_matrix = np.zeros((self.n,), dtype=np.object)
+        covariance_matrix = np.zeros((self.n,), dtype=object)
         for i in range(self.n):  # loop for nodes
             Yi = self.data[:, i * s:(i + 1) * s]
             covariance_matrix[i] = (1 / s) * np.dot(Yi, Yi.transpose())
 
-        error = np.zeros((self.n,), dtype=np.object)
+        error = np.zeros((self.n,), dtype=object)
         error_index = [0]
 
         err_curr = np.zeros((self.n, 1))
-        Q = np.zeros((self.n,), dtype=np.object)
+        Q = np.zeros((self.n,), dtype=object)
 
         T_c = [T_consensus_init]
         T_consensus = T_consensus_init
@@ -228,7 +247,7 @@ class Algorithms:
 
     def w_matmul(self, W, X):
         n = W.shape[0]
-        X_update = np.zeros((n,), dtype=np.object)
+        X_update = np.zeros((n,), dtype=object)
         for j in range(n):
             x_temp = np.zeros((n, X[0].shape[0], X[0].shape[1]))
             for i in range(n):
