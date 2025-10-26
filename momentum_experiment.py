@@ -54,6 +54,23 @@ def parse_arguments():
     parser.add_argument('--beta', type=float, default=0.9,
                        help='Momentum parameter for momentum-based algorithms')
     
+    # Hyperparameter sweep parameters
+    parser.add_argument('--alpha_list', type=float, nargs='+', default=None,
+                       help='List of alpha values for hyperparameter sweep')
+    parser.add_argument('--beta_list', type=float, nargs='+', default=None,
+                       help='List of beta values for hyperparameter sweep')
+    parser.add_argument('--target_dataset', type=str, default=None,
+                       choices=['synthetic', 'mnist', 'cifar10'],
+                       help='Target dataset for hyperparameter sweep')
+    parser.add_argument('--target_K', type=int, default=None,
+                       help='Target K for hyperparameter sweep')
+    parser.add_argument('--target_nodes', type=int, default=None,
+                       help='Target number of nodes for hyperparameter sweep')
+    parser.add_argument('--sweep_mode', action='store_true',
+                       help='Enable hyperparameter sweep mode')
+    parser.add_argument('--batch_size', type=int, default=None,
+                       help='Mini-batch size for M-DSA gradient computation (None for full batch)')
+    
     # Synthetic data parameters
     parser.add_argument('--eigengap', type=float, default=0.6,
                        help='Eigenvalue gap for synthetic data')
@@ -213,7 +230,7 @@ def run_dsa_wrapper(data: np.ndarray, X_gt: np.ndarray, C_locals: List[np.ndarra
 
 def run_mdsa_wrapper(data: np.ndarray, X_gt: np.ndarray, C_locals: List[np.ndarray], 
                     W_mixing: np.ndarray, max_iters: int, alpha: float, beta: float, 
-                    verbose: bool = False) -> List[float]:
+                    verbose: bool = False, batch_size: int = None) -> List[float]:
     """Wrapper for Momentum-Accelerated Distributed Sanger Algorithm (M-DSA)."""
     if verbose:
         print("  Running Momentum-Accelerated Distributed Sanger Algorithm (M-DSA)...")
@@ -225,7 +242,7 @@ def run_mdsa_wrapper(data: np.ndarray, X_gt: np.ndarray, C_locals: List[np.ndarr
     
     dist_pca = DistributedPCA(data, max_iters, X_gt.shape[1], len(C_locals), 
                              X_init, X_gt)
-    errors = dist_pca.M_DSA(W_mixing, alpha=alpha, beta=beta, step_flag=0)
+    errors = dist_pca.M_DSA(W_mixing, alpha=alpha, beta=beta, step_flag=0, batch_size=batch_size)
     return errors
 
 
@@ -284,7 +301,8 @@ def run_experiments(args, data: np.ndarray, X_gt: np.ndarray,
                 'max_iters': args.max_iters,
                 'alpha': args.alpha_mdsa if args.alpha_mdsa is not None else args.alpha,
                 'beta': args.beta,
-                'verbose': args.verbose
+                'verbose': args.verbose,
+                'batch_size': args.batch_size
             }
         }
     }
@@ -403,10 +421,279 @@ def plot_results(results_file: str, save_plot: bool = True) -> str:
     return plot_file if save_plot else None
 
 
+def run_hyperparameter_sweep(args):
+    """Run hyperparameter sweep for M-DSA on target configuration."""
+    print("=" * 80)
+    print("HYPERPARAMETER SWEEP MODE")
+    print("=" * 80)
+    
+    # Set default values for sweep if not provided
+    if args.alpha_list is None:
+        args.alpha_list = [0.005, 0.01, 0.02, 0.05]
+    if args.beta_list is None:
+        args.beta_list = [0.8, 0.9, 0.95, 0.99]
+    if args.target_dataset is None:
+        args.target_dataset = 'mnist'
+    if args.target_K is None:
+        args.target_K = 5
+    if args.target_nodes is None:
+        args.target_nodes = 4
+    
+    print(f"Target configuration: {args.target_dataset}, K={args.target_K}, nodes={args.target_nodes}")
+    print(f"Alpha values: {args.alpha_list}")
+    print(f"Beta values: {args.beta_list}")
+    
+    # Load data for target configuration
+    if args.target_dataset == 'synthetic':
+        data_gen = Data(args.d, args.N, args.eigengap, args.target_K)
+        data = data_gen.generateSynthetic()
+        X_gt = data_gen.computeTrueEV(data)
+        data_info = {
+            'type': 'synthetic',
+            'd': args.d,
+            'N': args.N,
+            'eigengap': args.eigengap,
+            'K': args.target_K
+        }
+    elif args.target_dataset in ['mnist', 'cifar10']:
+        data = read_dataset.read_data(args.target_dataset, limit=args.limit)
+        ev_path = f"Datasets/true_eigenvectors/EV_{args.target_dataset}.pickle"
+        with open(ev_path, 'rb') as f:
+            X_gt_full = pickle.load(f)
+        X_gt = X_gt_full[:, :args.target_K]
+        data_info = {
+            'type': args.target_dataset,
+            'd': data.shape[0],
+            'N': data.shape[1],
+            'K': args.target_K,
+            'limit': args.limit
+        }
+    
+    # Prepare distributed setup
+    C_locals, W_mixing = prepare_distributed_setup(data, args.target_nodes, args.connectivity)
+    
+    # Store all sweep results
+    sweep_results = {
+        'target_config': {
+            'dataset': args.target_dataset,
+            'K': args.target_K,
+            'num_nodes': args.target_nodes,
+            'data_info': data_info
+        },
+        'hyperparameters': {
+            'alpha_list': args.alpha_list,
+            'beta_list': args.beta_list
+        },
+        'results': {}
+    }
+    
+    # Run baseline DSA with a few alpha values for comparison
+    print(f"\nRunning baseline DSA experiments...")
+    baseline_alphas = [0.005, 0.01, 0.02]
+    for alpha in baseline_alphas:
+        print(f"  DSA with alpha={alpha}")
+        errors = run_dsa_wrapper(data, X_gt, C_locals, W_mixing, 
+                               args.max_iters, alpha, verbose=False)
+        sweep_results['results'][f'DSA_alpha{alpha}'] = {
+            'algorithm': 'DSA',
+            'alpha': alpha,
+            'beta': None,
+            'errors': errors
+        }
+    
+    # Run M-DSA sweep
+    print(f"\nRunning M-DSA hyperparameter sweep...")
+    total_combinations = len(args.alpha_list) * len(args.beta_list)
+    current_combination = 0
+    
+    for alpha in args.alpha_list:
+        for beta in args.beta_list:
+            current_combination += 1
+            print(f"  M-DSA {current_combination}/{total_combinations}: alpha={alpha}, beta={beta}")
+            
+            errors = run_mdsa_wrapper(data, X_gt, C_locals, W_mixing,
+                                    args.max_iters, alpha, beta, verbose=False, batch_size=args.batch_size)
+            
+            sweep_results['results'][f'M-DSA_alpha{alpha}_beta{beta}'] = {
+                'algorithm': 'M-DSA',
+                'alpha': alpha,
+                'beta': beta,
+                'errors': errors
+            }
+    
+    # Save sweep results
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    sweep_filename = f"results/hyperparameter_sweep_{args.target_dataset}_K{args.target_K}_n{args.target_nodes}_{timestamp}.npz"
+    
+    # Convert results to numpy arrays for saving
+    save_data = {
+        'target_config': sweep_results['target_config'],
+        'hyperparameters': sweep_results['hyperparameters']
+    }
+    
+    for key, result in sweep_results['results'].items():
+        save_data[f'errors_{key}'] = np.array(result['errors'])
+        save_data[f'alpha_{key}'] = result['alpha']
+        if result['beta'] is not None:
+            save_data[f'beta_{key}'] = result['beta']
+    
+    np.savez(sweep_filename, **save_data)
+    
+    print(f"\nSweep results saved to: {sweep_filename}")
+    
+    # Generate sweep plots
+    plot_hyperparameter_sweep(sweep_results, sweep_filename)
+    
+    return sweep_results, sweep_filename
+
+
+def plot_hyperparameter_sweep(sweep_results, filename):
+    """Generate plots for hyperparameter sweep results."""
+    print("Generating hyperparameter sweep plots...")
+    
+    # Create figure with subplots
+    fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+    fig.suptitle(f'Hyperparameter Sweep: {sweep_results["target_config"]["dataset"].upper()} '
+                f'K={sweep_results["target_config"]["K"]} '
+                f'n={sweep_results["target_config"]["num_nodes"]}', fontsize=16)
+    
+    # Plot 1: All M-DSA curves with different alpha/beta combinations
+    ax1 = axes[0, 0]
+    colors = plt.cm.viridis(np.linspace(0, 1, len(sweep_results['results'])))
+    
+    for i, (key, result) in enumerate(sweep_results['results'].items()):
+        if result['algorithm'] == 'M-DSA':
+            label = f"α={result['alpha']}, β={result['beta']}"
+            ax1.semilogy(result['errors'], label=label, color=colors[i], linewidth=2)
+    
+    ax1.set_title('M-DSA Hyperparameter Sweep')
+    ax1.set_xlabel('Iteration')
+    ax1.set_ylabel('Cosine Angle Distance (log scale)')
+    ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    ax1.grid(True, alpha=0.3)
+    
+    # Plot 2: Best M-DSA vs DSA baselines
+    ax2 = axes[0, 1]
+    
+    # Find best M-DSA
+    best_mdsa_key = None
+    best_mdsa_error = float('inf')
+    for key, result in sweep_results['results'].items():
+        if result['algorithm'] == 'M-DSA' and len(result['errors']) > 0:
+            if result['errors'][-1] < best_mdsa_error:
+                best_mdsa_error = result['errors'][-1]
+                best_mdsa_key = key
+    
+    # Plot DSA baselines
+    for key, result in sweep_results['results'].items():
+        if result['algorithm'] == 'DSA':
+            label = f"DSA α={result['alpha']}"
+            ax2.semilogy(result['errors'], label=label, linestyle='--', linewidth=2)
+    
+    # Plot best M-DSA
+    if best_mdsa_key:
+        best_result = sweep_results['results'][best_mdsa_key]
+        label = f"Best M-DSA α={best_result['alpha']}, β={best_result['beta']}"
+        ax2.semilogy(best_result['errors'], label=label, color='red', linewidth=3)
+    
+    ax2.set_title('Best M-DSA vs DSA Baselines')
+    ax2.set_xlabel('Iteration')
+    ax2.set_ylabel('Cosine Angle Distance (log scale)')
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+    
+    # Plot 3: Final error heatmap for alpha vs beta
+    ax3 = axes[1, 0]
+    
+    # Create heatmap data
+    alpha_list = sweep_results['hyperparameters']['alpha_list']
+    beta_list = sweep_results['hyperparameters']['beta_list']
+    heatmap_data = np.zeros((len(beta_list), len(alpha_list)))
+    
+    for i, beta in enumerate(beta_list):
+        for j, alpha in enumerate(alpha_list):
+            key = f'M-DSA_alpha{alpha}_beta{beta}'
+            if key in sweep_results['results']:
+                errors = sweep_results['results'][key]['errors']
+                if len(errors) > 0:
+                    heatmap_data[i, j] = errors[-1]
+                else:
+                    heatmap_data[i, j] = np.nan
+            else:
+                heatmap_data[i, j] = np.nan
+    
+    im = ax3.imshow(heatmap_data, cmap='viridis', aspect='auto')
+    ax3.set_xticks(range(len(alpha_list)))
+    ax3.set_xticklabels([f'{a:.3f}' for a in alpha_list])
+    ax3.set_yticks(range(len(beta_list)))
+    ax3.set_yticklabels([f'{b:.2f}' for b in beta_list])
+    ax3.set_xlabel('Alpha (α)')
+    ax3.set_ylabel('Beta (β)')
+    ax3.set_title('Final Error Heatmap (M-DSA)')
+    
+    # Add colorbar
+    cbar = plt.colorbar(im, ax=ax3)
+    cbar.set_label('Final Error')
+    
+    # Add text annotations
+    for i in range(len(beta_list)):
+        for j in range(len(alpha_list)):
+            if not np.isnan(heatmap_data[i, j]):
+                text = ax3.text(j, i, f'{heatmap_data[i, j]:.3f}',
+                              ha="center", va="center", color="white", fontsize=8)
+    
+    # Plot 4: Improvement over best DSA
+    ax4 = axes[1, 1]
+    
+    # Find best DSA
+    best_dsa_error = float('inf')
+    for key, result in sweep_results['results'].items():
+        if result['algorithm'] == 'DSA' and len(result['errors']) > 0:
+            if result['errors'][-1] < best_dsa_error:
+                best_dsa_error = result['errors'][-1]
+    
+    # Calculate improvements
+    improvements = []
+    labels = []
+    for key, result in sweep_results['results'].items():
+        if result['algorithm'] == 'M-DSA' and len(result['errors']) > 0:
+            improvement = (best_dsa_error - result['errors'][-1]) / best_dsa_error * 100
+            improvements.append(improvement)
+            labels.append(f"α={result['alpha']}, β={result['beta']}")
+    
+    if improvements:
+        bars = ax4.bar(range(len(improvements)), improvements, alpha=0.7)
+        ax4.set_xticks(range(len(improvements)))
+        ax4.set_xticklabels(labels, rotation=45, ha='right')
+        ax4.set_ylabel('Improvement over Best DSA (%)')
+        ax4.set_title('M-DSA Improvement over Best DSA')
+        ax4.grid(True, alpha=0.3)
+        
+        # Color bars based on improvement
+        for i, bar in enumerate(bars):
+            if improvements[i] > 0:
+                bar.set_color('green')
+            else:
+                bar.set_color('red')
+    
+    plt.tight_layout()
+    
+    # Save plot
+    plot_filename = filename.replace('.npz', '_sweep_plot.png')
+    plt.savefig(plot_filename, dpi=300, bbox_inches='tight')
+    plt.show()
+    
+    print(f"Sweep plot saved to: {plot_filename}")
+
+
 def main():
     """Main experiment function."""
     # Parse arguments
     args = parse_arguments()
+    
+    # Check if sweep mode is enabled
+    if args.sweep_mode or (args.alpha_list is not None) or (args.beta_list is not None):
+        return run_hyperparameter_sweep(args)
     
     if args.verbose:
         print("=" * 80)

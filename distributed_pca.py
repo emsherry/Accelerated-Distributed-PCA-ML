@@ -57,6 +57,48 @@ class DistributedPCA:
             
         return C_locals
     
+    def _get_local_data(self, node_idx: int) -> np.ndarray:
+        """Get local data for a specific node."""
+        s = math.floor(self.N / self.n)
+        start_idx = node_idx * s
+        end_idx = (node_idx + 1) * s
+        return self.data[:, start_idx:end_idx]
+    
+    def _compute_mini_batch_gradient(self, node_idx: int, X_hat_i_t: np.ndarray, 
+                                   batch_size: int) -> np.ndarray:
+        """
+        Compute mini-batch gradient for node i using sampled data.
+        
+        Args:
+            node_idx: Index of the node
+            X_hat_i_t: Current consensus estimate for node i (d x K)
+            batch_size: Size of mini-batch
+            
+        Returns:
+            Mini-batch gradient (d x K)
+        """
+        # Get local data for this node
+        X_i = self._get_local_data(node_idx)  # (d x N_i)
+        N_i = X_i.shape[1]
+        
+        if batch_size is None or batch_size >= N_i:
+            # Use full batch (precomputed covariance)
+            X_hat_i_t_T_Ci_X_hat_i_t = X_hat_i_t.T @ self.C_locals[node_idx] @ X_hat_i_t
+            grad_i_t = self.C_locals[node_idx] @ X_hat_i_t - X_hat_i_t @ np.triu(X_hat_i_t_T_Ci_X_hat_i_t)
+        else:
+            # Sample mini-batch with replacement
+            batch_indices = np.random.choice(N_i, size=batch_size, replace=True)
+            X_batch = X_i[:, batch_indices]  # (d x B)
+            
+            # Compute mini-batch covariance
+            C_batch = (1.0 / batch_size) * X_batch @ X_batch.T
+            
+            # Compute gradient using mini-batch covariance
+            X_hat_i_t_T_Cbatch_X_hat_i_t = X_hat_i_t.T @ C_batch @ X_hat_i_t
+            grad_i_t = C_batch @ X_hat_i_t - X_hat_i_t @ np.triu(X_hat_i_t_T_Cbatch_X_hat_i_t)
+        
+        return grad_i_t
+    
     def safe_normalize(self, M: np.ndarray) -> np.ndarray:
         """Safely normalize matrix columns to avoid division by zero."""
         norms = np.linalg.norm(M, axis=0)
@@ -153,7 +195,7 @@ class DistributedPCA:
         return errors
     
     def M_DSA(self, W_mixing: np.ndarray, alpha: float = 0.01, beta: float = 0.9, 
-              step_flag: int = 0) -> List[float]:
+              step_flag: int = 0, batch_size: int = None) -> List[float]:
         """
         Momentum-Accelerated Distributed Sanger Algorithm (M-DSA) with exact equations.
         
@@ -162,6 +204,7 @@ class DistributedPCA:
             alpha: Step size
             beta: Momentum parameter
             step_flag: 0=constant, 1=1/t^0.2, 2=1/sqrt(t)
+            batch_size: Mini-batch size for gradient computation (None for full batch)
             
         Returns:
             Error history
@@ -206,8 +249,8 @@ class DistributedPCA:
                         X_hat_i_t += W_mixing[i, j] * X_all_nodes_prev[j]
                 
                 # 2. Local Sanger Direction (Gradient using consensus estimate)
-                X_hat_i_t_T_Ci_X_hat_i_t = X_hat_i_t.T @ self.C_locals[i] @ X_hat_i_t
-                grad_i_t = self.C_locals[i] @ X_hat_i_t - X_hat_i_t @ np.triu(X_hat_i_t_T_Ci_X_hat_i_t)
+                # Use mini-batching if specified
+                grad_i_t = self._compute_mini_batch_gradient(i, X_hat_i_t, batch_size)
                 
                 # 3. Local Velocity Update
                 V_i_t_plus_1 = beta * V_all_nodes_prev[i] + grad_i_t

@@ -358,8 +358,49 @@ The results provide strong evidence for the effectiveness of momentum-based opti
 
 ---
 
+## 🔬 Mini-Batching Experiment Results
+
+### **Objective**
+Address the instability issues in MNIST K=10, N=6 configuration through mini-batching techniques.
+
+### **Experiment Design**
+- **Configuration**: MNIST K=10, N=6, 500 iterations
+- **M-DSA variants**: 3 hyperparameter configurations × 6 batch sizes = 18 experiments
+- **Batch sizes**: 1, 10, 50, 100, 200, full (166 samples)
+- **Baseline**: DSA with α=0.02
+
+### **Key Findings**
+
+#### **Best M-DSA Performance:**
+- **Configuration**: α=0.01, β=0.95, batch_size=200/full
+- **Final Error**: 0.727806
+- **vs DSA**: -25.79% (still worse than DSA baseline of 0.578573)
+
+#### **Mini-batching Effects:**
+- **Small batches (1-10)**: Consistently poor performance
+- **Large batches (100-200)**: Better performance, closer to full batch
+- **Full batch**: Often matches large batch performance
+
+#### **Hyperparameter Sensitivity:**
+- **α=0.01, β=0.95**: Most promising configuration
+- **α=0.05, β=0.90**: Inconsistent across batch sizes
+- **α=0.02, β=0.90**: Moderate performance
+
+### **Conclusion**
+Mini-batching provides some improvement but **does not solve the K=10 instability**. DSA remains more reliable for this challenging configuration.
+
+**Recommendation**: Use DSA with α=0.02 for MNIST K=10, N=6. If M-DSA is required, use α=0.01, β=0.95 with large batch sizes, but expect 25% worse performance.
+
+### **Generated Visualizations**
+- **Comprehensive plots**: Convergence curves, performance heatmaps, improvement analysis
+- **File**: `mini_batch_experiment_mnist_K10_n6_*_mini_batch_plots.png`
+- **Analysis**: `MINI_BATCHING_EXPERIMENT_RESULTS.md`
+
+---
+
 *Generated on: October 26, 2025*  
-*Total experiments: 10*  
+*Total experiments: 10 + 18 mini-batching*  
 *Algorithms compared: 4*  
 *Datasets tested: 3*  
-*Total plots generated: 10*
+*Total plots generated: 10 + 1 mini-batching*  
+*New features: Mini-batching support, hyperparameter sweeps*
